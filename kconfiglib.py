@@ -371,6 +371,7 @@ import glob
 import os
 import platform
 import re
+import subprocess
 import sys
 import textwrap
 
@@ -514,6 +515,7 @@ class Kconfig(object):
     """
     __slots__ = (
         "_encoding",
+        "_functions",
         "_set_re_match",
         "_unset_re_match",
         "_warn_for_no_prompt",
@@ -535,6 +537,7 @@ class Kconfig(object):
         "srctree",
         "syms",
         "top_node",
+        "variables",
         "warnings",
         "y",
 
@@ -665,6 +668,19 @@ class Kconfig(object):
             sym = self.const_syms[nmy]
             sym.rev_dep = sym.weak_rev_dep = sym.direct_dep = self.n
 
+        # Maps preprocessor variables names to Variable instances
+        self.variables = {}
+
+        # Predefined preprocessor functions
+        self._functions = {
+            "error-if":   _error_if_fn,
+            "filename":   _filename_fn,
+            "filename":   _filename_fn,
+            "lineno":     _lineno_fn,
+            "shell":      _shell_fn,
+            "warning-if": _warning_if_fn,
+        }
+
         # This is used to determine whether previously unseen symbols should be
         # registered. They shouldn't be if we parse expressions after parsing,
         # as part of Kconfig.eval_string().
@@ -742,7 +758,7 @@ class Kconfig(object):
         """
         See the class documentation.
         """
-        return _expand(self.top_node.prompt[0])
+        return self.top_node.prompt[0]
 
     @property
     def defconfig_filename(self):
@@ -755,7 +771,7 @@ class Kconfig(object):
         for filename, cond in self.defconfig_list.defaults:
             if expr_value(cond):
                 try:
-                    with self._open(_expand(filename.str_value)) as f:
+                    with self._open(filename.str_value) as f:
                         return f.name
                 except IOError:
                     continue
@@ -1588,7 +1604,10 @@ class Kconfig(object):
         # to the previous token. See _STRING_LEX for why this is needed.
         token = _get_keyword(command_match.group(1))
         if not token:
-            self._parse_error("expected keyword as first token")
+            # If the first token is not a keyword, we have a preprocessor
+            # variable assignment
+            self._parse_assignment(s)
+            return (None,)
 
         tokens = [token]
         # The current index in the string being tokenized
@@ -1652,43 +1671,19 @@ class Kconfig(object):
                 i += 1
 
                 if c in "\"'":
-                    # String literal/constant symbol
-                    if "\\" not in s:
-                        # Fast path: If the line contains no backslashes, we
-                        # can just find the matching quote.
+                    s, end_i = self._expand_quoted_str(s, i, c)
 
-                        end = s.find(c, i)
-                        if end == -1:
-                            self._parse_error("unterminated string")
+                    # os.path.expandvars() and the $UNAME_RELEASE replace() is
+                    # a backwards compatibility hack, which should be
+                    # reasonably safe as expandvars() leaves referenced to
+                    # undefined env. vars. as is.
+                    #
+                    # The preprocessor functionality changed how environment
+                    # variables are referenced, to $(FOO).
+                    val = os.path.expandvars(
+                        s[i:end_i - 1].replace("$UNAME_RELEASE", platform.uname()[2]))
 
-                        val = s[i:end]
-                        i = end + 1
-                    else:
-                        # Slow path for lines with backslashes (very rare,
-                        # performance irrelevant)
-
-                        quote = c
-                        val = ""
-
-                        while 1:
-                            if i >= len(s):
-                                self._parse_error("unterminated string")
-
-                            c = s[i]
-                            if c == quote:
-                                break
-
-                            if c == "\\":
-                                if i + 1 >= len(s):
-                                    self._parse_error("unterminated string")
-
-                                val += s[i + 1]
-                                i += 2
-                            else:
-                                val += c
-                                i += 1
-
-                        i += 1
+                    i = end_i
 
                     # This is the only place where we don't survive with a
                     # single token of lookback: 'option env="FOO"' does not
@@ -1727,6 +1722,19 @@ class Kconfig(object):
 
                 elif c == ")":
                     token = _T_CLOSE_PAREN
+
+                elif c == "$":
+                    i -= 1
+                    s, end_i = self._expand_macro(s, i, ())
+                    val = s[i:end_i]
+                    i = end_i
+
+                    # Compatibility with what the C implementation does. Might
+                    # be unexpected that you can reference non-constant symbols
+                    # this way though...
+                    token = self.const_syms[val] \
+                            if val in ("n", "m", "y") else \
+                            self._lookup_sym(val)
 
                 elif c == "#":
                     break
@@ -1826,7 +1834,6 @@ class Kconfig(object):
 
         return token
 
-
     def _check_token(self, token):
         # If the next token is 'token', removes it and returns True
 
@@ -1835,6 +1842,128 @@ class Kconfig(object):
             return True
         return False
 
+    def _parse_assignment(self, s):
+        # Parses a preprocessor variable assignment, registering the variable
+        # if it doesn't already exist
+
+        # TODO: expansion in LHS
+
+        assign_match = _var_assignment_re_match(s)
+        if not assign_match:
+            self._parse_error("syntax error")
+
+        name, op, val = assign_match.groups()
+
+        if name in self.variables:
+            var = self.variables[name]
+        else:
+            var = Variable()
+            var.name = name
+            var.is_recursive = True
+            var.value = ""
+
+            self.variables[name] = var
+
+        if op == "=":
+            var.is_recursive = True
+            var.value = val
+        elif op == ":=":
+            var.is_recursive = False
+            var.value = self._expand_whole(val, ())
+        else:  # op == "+="
+            # += does immediate expansion if the variable was last set
+            # with :=
+            var.value += val if var.is_recursive else \
+                         self._expand_whole(val, ())
+
+    def _expand_whole(self, s, args):
+        i = 0
+        while 1:
+            i = s.find("$(", i)
+            if i == -1:
+                break
+            s, i = self._expand_macro(s, i, args)
+        return s
+
+    def _expand_quoted_str(self, s, i, quote):
+        while 1:
+            match = _string_special_re_search(s, i)
+            if not match:
+                self._parse_error("unterminated string")
+
+
+            if match.group() == quote:
+                return (s, match.end())
+
+            elif match.group() == "\\":
+                i = match.end()
+                s = s[:match.start()] + s[i:]
+
+            elif match.group() == "$(":
+                s, i = self._expand_macro(s, match.start(), ())
+
+            else:
+                # A ' quote within " quotes or vice versa
+                i += 1
+
+        # TODO: Add separate expandvars() call in _tokenize() as a backwards
+        # compatibility hack. It preserves "$doesnotexist", so should be
+        # reasonably safe.
+
+        # A predefined UNAME_RELEASE symbol is expanded in one of the
+        # 'default's of the DEFCONFIG_LIST symbol in the Linux kernel. This
+        # function maintains compatibility with it even though environment
+        # variables in strings are now expanded directly.
+
+        # platform.uname() has an internal cache, so this is speedy enough
+        return os.path.expandvars(s.replace("$UNAME_RELEASE", platform.uname()[2]))
+
+    def _expand_macro(self, s, i, args):
+        start = i
+        i += 2  # Skip over "$("
+        arg_start = i
+
+        new_args = []
+
+        while 1:
+            match = _macro_special_re_search(s, i)
+            if not match:
+                self._parse_error("missing end parenthesis in macro expansion")
+
+
+            if match.group() == ")":
+                new_args.append(s[arg_start:match.start()])
+
+                prefix = s[:start]
+
+                try:
+                    prefix += args[int(new_args[0])]
+                except (ValueError, IndexError):
+                    prefix += self._fn_val(new_args)
+
+                return (prefix + s[match.end():],
+                        len(prefix))
+
+            elif match.group() == ",":
+                new_args.append(s[arg_start:match.start()])
+                arg_start = i = match.end()
+
+            else:  # match.group() == "$("
+                s, i = self._expand_macro(s, match.start(), args)
+
+    def _fn_val(self, args):
+        fn = args[0]
+
+        if fn in self.variables:
+            return self._expand_whole(self.variables[fn].value, args)
+
+        if fn in self._functions:
+            return self._functions[fn](self, args)
+
+        if fn in os.environ:
+            return os.environ[fn]
+
+        return ""
 
     #
     # Parsing
@@ -1927,20 +2056,20 @@ class Kconfig(object):
                 prev.next = prev = node
 
             elif t0 == _T_SOURCE:
-                self._enter_file(_expand(self._expect_str_and_eol()))
+                self._enter_file(self._expect_str_and_eol())
                 prev = self._parse_block(None, parent, prev)
                 self._leave_file()
 
             elif t0 == _T_RSOURCE:
                 self._enter_file(os.path.join(
                     os.path.dirname(self._filename),
-                    _expand(self._expect_str_and_eol())
+                    self._expect_str_and_eol()
                 ))
                 prev = self._parse_block(None, parent, prev)
                 self._leave_file()
 
             elif t0 in (_T_GSOURCE, _T_GRSOURCE):
-                pattern = _expand(self._expect_str_and_eol())
+                pattern = self._expect_str_and_eol()
                 if t0 == _T_GRSOURCE:
                     # Relative gsource
                     pattern = os.path.join(os.path.dirname(self._filename),
@@ -4418,6 +4547,14 @@ class MenuNode(object):
 
         return "\n".join(lines) + "\n"
 
+class Variable(object):
+    # !!!
+    __slots__ = (
+        "name",
+        "is_recursive",
+        "value",
+    )
+
 class KconfigError(Exception):
     """
     Exception raised for Kconfig-related errors.
@@ -4691,15 +4828,6 @@ def _make_depend_on(sc, expr):
     elif not expr.is_constant:
         # Non-constant symbol, or choice
         expr._dependents.add(sc)
-
-def _expand(s):
-    # A predefined UNAME_RELEASE symbol is expanded in one of the 'default's of
-    # the DEFCONFIG_LIST symbol in the Linux kernel. This function maintains
-    # compatibility with it even though environment variables in strings are
-    # now expanded directly.
-
-    # platform.uname() has an internal cache, so this is speedy enough
-    return os.path.expandvars(s.replace("$UNAME_RELEASE", platform.uname()[2]))
 
 def _parenthesize(expr, type_):
     # expr_str() helper. Adds parentheses around expressions of type 'type_'.
@@ -5184,6 +5312,56 @@ def _warn_choice_select_imply(sym, expr, expr_type):
 
     sym.kconfig._warn(msg)
 
+# Preprocessor functions
+
+# TODO: default $(FOO)  should check if $(FOO) expands to an empty string
+# TODO: check if variable with spaces is referenced
+
+def _filename_fn(kconf, args):
+    if len(args) > 1:
+        todo
+
+    return kconf._filename
+
+def _lineno_fn(kconf, args):
+    if len(args) > 1:
+        todo
+
+    return str(kconf._linenr)
+
+def _info_fn(kconf, args):
+    if len(args) != 2:
+        vhfdiv
+
+    return args[1]
+
+def _warning_if_fn(kconf, args):
+    if len(args) != 3:
+        todo
+
+    if args[1] == "y":
+        kconf._warn("warning: " + args[2])
+
+    return ""
+
+def _error_if_fn(kconf, args):
+    if len(args) != 3:
+        todo
+
+    if args[1] == "y":
+        kconf._parse_error("error: " + args[2])
+
+    return ""
+
+def _shell_fn(kconf, args):
+    if len(args) != 2:
+        todo
+
+    stdout = subprocess.Popen(args[1], shell=True, stdout=subprocess.PIPE) \
+        .communicate()[0].rstrip("\n").replace("\n", " ")
+
+    return stdout
+
 #
 # Public global constants
 #
@@ -5389,6 +5567,16 @@ _command_re_match = re.compile(r"\s*([A-Za-z0-9_-]+)\s*", _RE_ASCII).match
 
 # Matches an identifier/keyword, also eating trailing whitespace
 _id_keyword_re_match = re.compile(r"([A-Za-z0-9_/.-]+)\s*", _RE_ASCII).match
+
+# A preprocessor variable assignment
+_var_assignment_re_match = \
+    re.compile(r"\s*([A-Za-z0-9_-]+)\s*(=|:=|\+=)\s*(.*)", _RE_ASCII).match
+
+# Special characters/strings while expanding a macro
+_macro_special_re_search = re.compile(r"\)|,|\$\(", _RE_ASCII).search
+
+# Special characters/strings while expanding a string
+_string_special_re_search = re.compile(r'"|\'|\\|\$\(', _RE_ASCII).search
 
 # Matches a valid right-hand side for an assignment to a string symbol in a
 # .config file, including escaped characters. Extracts the contents.
