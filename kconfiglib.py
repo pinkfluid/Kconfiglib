@@ -1906,18 +1906,6 @@ class Kconfig(object):
                 # A ' quote within " quotes or vice versa
                 i += 1
 
-        # TODO: Add separate expandvars() call in _tokenize() as a backwards
-        # compatibility hack. It preserves "$doesnotexist", so should be
-        # reasonably safe.
-
-        # A predefined UNAME_RELEASE symbol is expanded in one of the
-        # 'default's of the DEFCONFIG_LIST symbol in the Linux kernel. This
-        # function maintains compatibility with it even though environment
-        # variables in strings are now expanded directly.
-
-        # platform.uname() has an internal cache, so this is speedy enough
-        return os.path.expandvars(s.replace("$UNAME_RELEASE", platform.uname()[2]))
-
     def _expand_macro(self, s, i, args):
         start = i
         i += 2  # Skip over "$("
