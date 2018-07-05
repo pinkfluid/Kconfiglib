@@ -2035,15 +2035,27 @@ g
     verify_variable("simple-immediate", "bar", "bar", False)
     verify_variable("simple-recursive-2", "baz", "baz", True)
 
+    verify_variable("whitespaced", "foo", "foo", True)
+
     verify_variable("preserve-recursive", "foo bar", "foo bar", True)
     verify_variable("preserve-immediate", "foo bar", "foo bar", False)
 
     verify_variable("recursive",
-                    "$(foo) $(bar) $($(b-character)a$(z-character)) $(indir)",
+                    "$(foo) $(bar) $($(b-char)a$(z-char)) $(indir)",
                     "abc def ghi jkl mno",
                     True)
 
     verify_variable("immediate", "foofoo", "foofoo", False)
+
+    verify_variable("messy-fn-res",
+                    "$($(fn-indir)-unused-arg, a  b , c  d )",
+                    'surround-rev-quote " c  d " " a  b " surround-rev-quote ',
+                    True)
+
+    verify_variable("special-chars-fn-res",
+                    "$(fn,$(comma)$(dollar)$(left-paren)foo$(right-paren))",
+                    '",$(foo)"',
+                    True)
 
 
     print("\nAll selftests passed\n" if all_passed else

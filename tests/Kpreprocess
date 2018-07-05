@@ -1,9 +1,11 @@
-# Simple assignments (scrunched up, as an additional test)
+# Simple assignments (with bad formatting, as an additional test)
 
 simple-recursive=foo
 simple-immediate:=bar
 # Should become recursive
 simple-recursive-2+=baz
+
+	 whitespaced	 =	 foo
 
 
 # Simple += test. += should preserve the flavor of the variable (simple vs.
@@ -18,15 +20,15 @@ preserve-immediate += bar
 
 # Recursive substitution
 
-recursive = $(foo) $(bar) $($(b-character)a$(z-character))
+recursive = $(foo) $(bar) $($(b-char)a$(z-char))
 recursive += $(indir)
 
 foo = abc
 bar = def
 baz = ghi
 
-b-character = b
-z-character = z
+b-char = b
+z-char = z
 
 indir = jkl $(indir-2)
 indir-2 = mno
@@ -38,3 +40,23 @@ def = foo
 immediate := $(undef)$(def)$(undef)$(def)
 def = bar
 undef = bar
+
+
+# Function calls
+
+# Chained function call
+quote = "$(1)" "$(2)"
+rev-quote = $(quote,$(2),$(1))
+surround-rev-quote = $(0) $(rev-quote,$(1),$(2)) $(0)
+surround-rev-quote-unused-arg = $(surround-rev-quote,$(1),$(2)) $(3)
+# No value is passed for $(3), so it expands to nothing
+fn-indir = surround-rev-quote
+messy-fn-res = $($(fn-indir)-unused-arg, a  b , c  d )
+
+# Special characters in function call
+comma = ,
+right-paren = )
+dollar = $
+left-paren = (
+fn = "$(1)"
+special-chars-fn-res = $(fn,$(comma)$(dollar)$(left-paren)foo$(right-paren))
