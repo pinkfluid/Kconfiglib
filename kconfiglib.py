@@ -530,6 +530,7 @@ class Kconfig(object):
         "defconfig_list",
         "defined_syms",
         "m",
+        "mainmenu_text",
         "menus",
         "modules",
         "n",
@@ -612,7 +613,6 @@ class Kconfig(object):
           Related PEP: https://www.python.org/dev/peps/pep-0538/
         """
         self.srctree = os.environ.get("srctree")
-
         self.config_prefix = os.environ.get("CONFIG_", "CONFIG_")
 
         # Regular expressions for parsing .config files, with the match()
@@ -668,6 +668,7 @@ class Kconfig(object):
             sym = self.const_syms[nmy]
             sym.rev_dep = sym.weak_rev_dep = sym.direct_dep = self.n
 
+
         # Maps preprocessor variables names to Variable instances
         self.variables = {}
 
@@ -680,6 +681,7 @@ class Kconfig(object):
             "shell":      _shell_fn,
             "warning-if": _warning_if_fn,
         }
+
 
         # This is used to determine whether previously unseen symbols should be
         # registered. They shouldn't be if we parse expressions after parsing,
@@ -714,9 +716,11 @@ class Kconfig(object):
         self._filename = filename
         self._linenr = 0
 
+        # Open the top-level Kconfig file
         self._file = self._open(filename)
 
         try:
+            # Parse everything
             self._parse_block(None, self.top_node, self.top_node)
         except UnicodeDecodeError as e:
             _decoding_error(e, self._filename)
@@ -751,14 +755,10 @@ class Kconfig(object):
         # awkward during dependency loop detection
         self._add_choice_deps()
 
+
         self._warn_for_no_prompt = True
 
-    @property
-    def mainmenu_text(self):
-        """
-        See the class documentation.
-        """
-        return self.top_node.prompt[0]
+        self.mainmenu_text = self.top_node.prompt[0]
 
     @property
     def defconfig_filename(self):
