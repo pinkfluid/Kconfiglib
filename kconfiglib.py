@@ -1858,9 +1858,13 @@ class Kconfig(object):
             var = self.variables[name]
         else:
             var = Variable()
+            var.kconfig = self
             var.name = name
-            var.is_recursive = True
-            var.value = ""
+
+            # += acts like = (defines a recursive variable) on undefined
+            # variables
+            if op == "+=":
+                op = "="
 
             self.variables[name] = var
 
@@ -1873,8 +1877,8 @@ class Kconfig(object):
         else:  # op == "+="
             # += does immediate expansion if the variable was last set
             # with :=
-            var.value += val if var.is_recursive else \
-                         self._expand_whole(val, ())
+            var.value += " " + (val if var.is_recursive else \
+                                self._expand_whole(val, ()))
 
     def _expand_whole(self, s, args):
         i = 0
@@ -4538,10 +4542,18 @@ class MenuNode(object):
 class Variable(object):
     # !!!
     __slots__ = (
+        "kconfig",
         "name",
         "is_recursive",
         "value",
     )
+
+    @property
+    def expanded_value(self):
+        """
+        !!!
+        """
+        return self.kconfig._expand_whole(self.value, ())
 
 class KconfigError(Exception):
     """

@@ -1,0 +1,40 @@
+# Simple assignments (scrunched up, as an additional test)
+
+simple-recursive=foo
+simple-immediate:=bar
+# Should become recursive
+simple-recursive-2+=baz
+
+
+# Simple += test. += should preserve the flavor of the variable (simple vs.
+# recursive).
+
+preserve-recursive = foo
+preserve-recursive += bar
+
+preserve-immediate := foo
+preserve-immediate += bar
+
+
+# Recursive substitution
+
+recursive = $(foo) $(bar) $($(b-character)a$(z-character))
+recursive += $(indir)
+
+foo = abc
+bar = def
+baz = ghi
+
+b-character = b
+z-character = z
+
+indir = jkl $(indir-2)
+indir-2 = mno
+
+
+# Immediate substitution
+
+def = foo
+immediate := $(undef)$(def)$(undef)$(def)
+def = bar
+undef = bar

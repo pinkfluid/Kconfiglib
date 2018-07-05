@@ -2012,6 +2012,40 @@ g
             fail("dependency loop in {} not detected".format(filename))
 
 
+    print("Testing preprocessor")
+
+    c = Kconfig("Kconfiglib/tests/Kpreprocess")
+
+    def verify_variable(name, unexp_value, exp_value, recursive):
+        var = c.variables[name]
+
+        verify(var.value == unexp_value,
+               "expected variable '{}' to have the unexpanded value '{}', had "
+               "the value '{}'".format(name, unexp_value, var.value))
+
+        verify(var.expanded_value == exp_value,
+               "expected variable '{}' to have the expanded value '{}', had "
+               "the value '{}'".format(name, exp_value, var.expanded_value))
+
+        verify(var.is_recursive == recursive,
+               "{} was {}, shouldn't be"
+               .format(name, "recursive" if var.is_recursive else "simple"))
+
+    verify_variable("simple-recursive", "foo", "foo", True)
+    verify_variable("simple-immediate", "bar", "bar", False)
+    verify_variable("simple-recursive-2", "baz", "baz", True)
+
+    verify_variable("preserve-recursive", "foo bar", "foo bar", True)
+    verify_variable("preserve-immediate", "foo bar", "foo bar", False)
+
+    verify_variable("recursive",
+                    "$(foo) $(bar) $($(b-character)a$(z-character)) $(indir)",
+                    "abc def ghi jkl mno",
+                    True)
+
+    verify_variable("immediate", "foofoo", "foofoo", False)
+
+
     print("\nAll selftests passed\n" if all_passed else
           "\nSome selftests failed\n")
 
