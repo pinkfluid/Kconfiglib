@@ -2014,6 +2014,7 @@ g
 
     print("Testing preprocessor")
 
+    os.environ["ENV_VAR"] = "env"
     c = Kconfig("Kconfiglib/tests/Kpreprocess")
 
     def verify_variable(name, unexp_value, exp_value, recursive):
@@ -2056,6 +2057,13 @@ g
                     "$(fn,$(comma)$(dollar)$(left-paren)foo$(right-paren))",
                     '",$(foo)"',
                     True)
+
+    verify_str(c.syms["PRINT_ME"], r"""
+config PRINT_ME
+	string
+	prompt "env" if (FOO && BAR) || !BAZ || !QAZ
+	default "\"foo\"" if "foo \"bar\" baz" = ""
+""")
 
 
     print("\nAll selftests passed\n" if all_passed else
