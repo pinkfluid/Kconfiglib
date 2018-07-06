@@ -1655,20 +1655,12 @@ class Kconfig(object):
                     token = name
 
             else:
-                # Not keyword/non-const symbol
+                # Neither a keyword nor a non-const symbol (except
+                # $()-expansion might still yield a non-const symbol).
 
-                # Note: _id_keyword_match and _initial_token_match strip
-                # trailing whitespace, making it safe to assume s[i] is the
-                # start of a token here. We manually strip trailing whitespace
-                # below as well.
-                #
-                # An old version stripped whitespace in this spot instead, but
-                # that leads to some redundancy and would cause
-                # _id_keyword_match to be tried against just "\n" fairly often
-                # (because file.readlines() keeps newlines).
-
+                # We always strip whitespace after tokens, so it is safe to
+                # assume that s[i] is the start of a token here.
                 c = s[i]
-                i += 1
 
                 if c in "\"'":
                     s, end_i = self._expand_quoted_str(s, i, c)
@@ -1681,7 +1673,8 @@ class Kconfig(object):
                     # The preprocessor functionality changed how environment
                     # variables are referenced, to $(FOO).
                     val = os.path.expandvars(
-                        s[i:end_i - 1].replace("$UNAME_RELEASE", platform.uname()[2]))
+                        s[i + 1:end_i - 1].replace("$UNAME_RELEASE",
+                                                   platform.uname()[2]))
 
                     i = end_i
 
@@ -1693,38 +1686,35 @@ class Kconfig(object):
                                 tokens[0] == _T_OPTION else \
                             self._lookup_const_sym(val)
 
-                elif c == "&":
-                    if i >= len(s) or s[i] != "&":
-                        self._parse_error("malformed operator")
-
+                elif s.startswith("&&", i):
                     token = _T_AND
-                    i += 1
+                    i += 2
 
-                elif c == "|":
-                    if i >= len(s) or s[i] != "|":
-                        self._parse_error("malformed operator")
-
+                elif s.startswith("||", i):
                     token = _T_OR
-                    i += 1
-
-                elif c == "!":
-                    if i < len(s) and s[i] == "=":
-                        token = _T_UNEQUAL
-                        i += 1
-                    else:
-                        token = _T_NOT
+                    i += 2
 
                 elif c == "=":
                     token = _T_EQUAL
+                    i += 1
+
+                elif s.startswith("!=", i):
+                    token = _T_UNEQUAL
+                    i += 2
+
+                elif c == "!":
+                    token = _T_NOT
+                    i += 1
 
                 elif c == "(":
                     token = _T_OPEN_PAREN
+                    i += 1
 
                 elif c == ")":
                     token = _T_CLOSE_PAREN
+                    i += 1
 
                 elif c == "$":
-                    i -= 1
                     s, end_i = self._expand_macro(s, i, ())
                     val = s[i:end_i]
                     i = end_i
@@ -1739,29 +1729,36 @@ class Kconfig(object):
                 elif c == "#":
                     break
 
-                # Very rare
-                elif c == "<":
-                    if i < len(s) and s[i] == "=":
-                        token = _T_LESS_EQUAL
-                        i += 1
-                    else:
-                        token = _T_LESS
 
                 # Very rare
+
+                elif s.startswith("<=", i):
+                    token = _T_LESS_EQUAL
+                    i += 2
+
+                elif c == "<":
+                    token = _T_LESS
+                    i += 1
+
+                elif s.startswith(">=", i):
+                    token = _T_GREATER_EQUAL
+                    i += 2
+
                 elif c == ">":
-                    if i < len(s) and s[i] == "=":
-                        token = _T_GREATER_EQUAL
-                        i += 1
-                    else:
-                        token = _T_GREATER
+                    token = _T_GREATER
+                    i += 1
+
 
                 else:
-                    self._parse_error("invalid character in line")
+                    self._parse_error("unknown tokens in line")
+
 
                 # Skip trailing whitespace
                 while i < len(s) and s[i].isspace():
                     i += 1
 
+
+            # Add the token
             tokens.append(token)
 
         # None-terminating the token list makes the token fetching functions
@@ -1890,6 +1887,7 @@ class Kconfig(object):
         return s
 
     def _expand_quoted_str(self, s, i, quote):
+        i += 1  # Skip over initial "/'
         while 1:
             match = _string_special_re_search(s, i)
             if not match:
@@ -2812,7 +2810,7 @@ class Kconfig(object):
             loc = "{}:{}: ".format(self._filename, self._linenr)
 
         raise KconfigError(
-            "{}Couldn't parse '{}': {}".format(loc, self._line.rstrip(), msg))
+            "{}couldn't parse '{}': {}".format(loc, self._line.rstrip(), msg))
 
     def _open_enc(self, filename, mode):
         # open() wrapper for forcing the encoding on Python 3. Forcing the
