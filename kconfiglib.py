@@ -1857,6 +1857,7 @@ class Kconfig(object):
             var = Variable()
             var.kconfig = self
             var.name = name
+            var._n_expansions = 0
 
             # += acts like = (defines a recursive variable) on undefined
             # variables
@@ -1945,7 +1946,20 @@ class Kconfig(object):
         fn = args[0]
 
         if fn in self.variables:
-            return self._expand_whole(self.variables[fn].value, args)
+            var = self.variables[fn]
+
+            if len(args) == 1:
+                if var._n_expansions:
+                    self._parse_error("Preprocessor variable {} recursively "
+                                      "references itself".format(var.name))
+            elif var._n_expansions > 100:
+                self._parse_error("Preprocessor function {} seems stuck "
+                                  "in infinite recursion".format(var.name))
+
+            var._n_expansions += 1
+            res = self._expand_whole(self.variables[fn].value, args)
+            var._n_expansions -= 1
+            return res
 
         if fn in self._functions:
             return self._functions[fn](self, args)
@@ -4540,9 +4554,10 @@ class MenuNode(object):
 class Variable(object):
     # !!!
     __slots__ = (
+        "_n_expansions",
+        "is_recursive",
         "kconfig",
         "name",
-        "is_recursive",
         "value",
     )
 

@@ -2065,6 +2065,24 @@ config PRINT_ME
 	default "\"foo\"" if "foo \"bar\" baz" = ""
 """)
 
+    def verify_recursive(name):
+        try:
+            c.variables[name].expanded_value
+        except KconfigError:
+            pass
+        else:
+            fail("Expected '{}' expansion to flag recursive expansion, didn't"
+                 .format(name))
+
+    verify_recursive("rec-1")
+    # Indirectly verifies that it's not recursive
+    verify_variable("safe-fn-rec-res",
+                    "$(safe-fn-rec,safe-fn-rec-2)",
+                    "foo",
+                    True)
+    verify_recursive("unsafe-fn-rec")
+
+
 
     print("\nAll selftests passed\n" if all_passed else
           "\nSome selftests failed\n")

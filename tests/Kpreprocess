@@ -71,3 +71,19 @@ echo = $(1)
 config PRINT_ME
 	string "$(ENV_VAR)" if ($(echo,FOO) && $(echo,BAR)) || !$(echo,BAZ) || !(($(qaz)))
 	default "$(echo,"foo")" if "foo $(echo,"bar") baz" = "$(undefined)"
+
+
+# Recursive expansion (throws an exception)
+
+rec-1 = x $(rec-2) y
+rec-2 = x $(rec-3) y
+rec-3 = x $(rec-1) y
+
+# Functions are allowed to reference themselves, but an exception is thrown if
+# the function seems to be stuck (the recursion gets too deep)
+safe-fn-rec = $($(1))
+safe-fn-rec-2 = $(safe-fn-rec,safe-fn-rec-3)
+safe-fn-rec-3 = foo
+safe-fn-rec-res = $(safe-fn-rec,safe-fn-rec-2)
+
+unsafe-fn-rec = $(unsafe-fn-rec,$(1))
