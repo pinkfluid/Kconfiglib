@@ -1843,7 +1843,20 @@ class Kconfig(object):
         # Parses a preprocessor variable assignment, registering the variable
         # if it doesn't already exist
 
-        # TODO: expansion in LHS
+        # Expand any macros in the left-hand-side of the assignment
+        s = s.lstrip()
+        i = 0
+        while 1:
+            i = _lhs_fragment_match(s, i).end()
+            if s.startswith("$(", i):
+                s, i = self._expand_macro(s, i, ())
+            else:
+                break
+
+        if s.isspace():
+            # We also accept a bare macro on a line (e.g.
+            # $(warning-if,$(foo),ops)), provided it expands to a blank string
+            return
 
         assign_match = _var_assignment_re_match(s)
         if not assign_match:
@@ -5576,10 +5589,14 @@ _RE_ASCII = 0 if _IS_PY2 else re.ASCII
 # there is only one token).
 #
 # This regex will also fail to match for empty lines and comment lines.
-_command_re_match = re.compile(r"\s*([A-Za-z0-9_-]+)\s*", _RE_ASCII).match
+# !!! $
+_command_re_match = re.compile(r"\s*([$A-Za-z0-9_-]+)\s*", _RE_ASCII).match
 
 # Matches an identifier/keyword, also eating trailing whitespace
 _id_keyword_re_match = re.compile(r"([A-Za-z0-9_/.-]+)\s*", _RE_ASCII).match
+
+# !!!
+_lhs_fragment_match = re.compile("[A-Za-z0-9_-]*", _RE_ASCII).match
 
 # A preprocessor variable assignment
 _var_assignment_re_match = \

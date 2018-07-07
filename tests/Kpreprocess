@@ -87,3 +87,15 @@ safe-fn-rec-3 = foo
 safe-fn-rec-res = $(safe-fn-rec,safe-fn-rec-2)
 
 unsafe-fn-rec = $(unsafe-fn-rec,$(1))
+
+
+# Expansion in the left-hand side of assignments
+
+dummy-arg-fn = bar
+lhs-indir-1 = lhs-indir-2
+lhs-indir-2 = -baz
+rhs = value
+# LHS expands to foo-bar-baz
+foo-$(dummy-arg-fn, ignored argument )$($(lhs-indir-1)) = $(rhs)
+# Expands to empty string, accepted
+  $(undefined)  

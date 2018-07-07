@@ -2082,6 +2082,7 @@ config PRINT_ME
                     True)
     verify_recursive("unsafe-fn-rec")
 
+    verify_variable("foo-bar-baz", "$(rhs)", "value", True)
 
 
     print("\nAll selftests passed\n" if all_passed else
