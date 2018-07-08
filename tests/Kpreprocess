@@ -99,3 +99,10 @@ rhs = value
 foo-$(dummy-arg-fn, ignored argument )$($(lhs-indir-1)) = $(rhs)
 # Expands to empty string, accepted
   $(undefined)  
+
+
+# Variable with a space in its name
+empty =
+space = $(empty) $(empty)
+foo$(space)bar = value
+space-var-res = $(foo bar)

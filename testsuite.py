@@ -2084,6 +2084,8 @@ config PRINT_ME
 
     verify_variable("foo-bar-baz", "$(rhs)", "value", True)
 
+    verify_variable("space-var-res", "$(foo bar)", "value", True)
+
 
     print("\nAll selftests passed\n" if all_passed else
           "\nSome selftests failed\n")

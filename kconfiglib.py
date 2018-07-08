@@ -1847,7 +1847,7 @@ class Kconfig(object):
         s = s.lstrip()
         i = 0
         while 1:
-            i = _lhs_fragment_match(s, i).end()
+            i = _assignment_lhs_fragment_match(s, i).end()
             if s.startswith("$(", i):
                 s, i = self._expand_macro(s, i, ())
             else:
@@ -1858,11 +1858,17 @@ class Kconfig(object):
             # $(warning-if,$(foo),ops)), provided it expands to a blank string
             return
 
-        assign_match = _var_assignment_re_match(s)
-        if not assign_match:
+        # Assigned variable
+        name = s[:i]
+
+
+        # Extract assignment operator (=, :=, +=) and value
+        rhs_match = _assignment_rhs_match(s, i)
+        if not rhs_match:
             self._parse_error("syntax error")
 
-        name, op, val = assign_match.groups()
+        op, val = rhs_match.groups()
+
 
         if name in self.variables:
             var = self.variables[name]
@@ -5596,11 +5602,10 @@ _command_re_match = re.compile(r"\s*([$A-Za-z0-9_-]+)\s*", _RE_ASCII).match
 _id_keyword_re_match = re.compile(r"([A-Za-z0-9_/.-]+)\s*", _RE_ASCII).match
 
 # !!!
-_lhs_fragment_match = re.compile("[A-Za-z0-9_-]*", _RE_ASCII).match
+_assignment_lhs_fragment_match = re.compile("[A-Za-z0-9_-]*", _RE_ASCII).match
 
-# A preprocessor variable assignment
-_var_assignment_re_match = \
-    re.compile(r"\s*([A-Za-z0-9_-]+)\s*(=|:=|\+=)\s*(.*)", _RE_ASCII).match
+# !!!
+_assignment_rhs_match = re.compile(r"\s*(=|:=|\+=)\s*(.*)", _RE_ASCII).match
 
 # Special characters/strings while expanding a macro
 _macro_special_re_search = re.compile(r"\)|,|\$\(", _RE_ASCII).search
