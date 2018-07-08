@@ -5390,9 +5390,13 @@ def _shell_fn(kconf, args):
         todo
 
     stdout = subprocess.Popen(args[1], shell=True, stdout=subprocess.PIPE) \
-        .communicate()[0].rstrip("\n").replace("\n", " ")
+             .communicate()[0]
 
-    return stdout
+    if not _IS_PY2:
+        # TODO: decoding errors
+        stdout = stdout.decode(kconf._encoding)
+
+    return stdout.rstrip("\n").replace("\n", " ")
 
 #
 # Public global constants
