@@ -1997,7 +1997,8 @@ g
     print("Testing preprocessor")
 
     os.environ["ENV_VAR"] = "env"
-    c = Kconfig("Kconfiglib/tests/Kpreprocess")
+    # We verify warnings manually
+    c = Kconfig("Kconfiglib/tests/Kpreprocess", warn_to_stderr=False)
 
     def verify_variable(name, unexp_value, exp_value, recursive):
         var = c.variables[name]
@@ -2067,6 +2068,35 @@ config PRINT_ME
     verify_variable("foo-bar-baz", "$(rhs)", "value", True)
 
     verify_variable("space-var-res", "$(foo bar)", "value", True)
+
+    verify_variable("shell-res",
+                    "$(shell,false && echo foo bar || echo baz qaz)",
+                    "baz qaz",
+                    True)
+
+    verify_variable("shell-stderr-res", "", "", False)
+
+    verify_variable("location-res",
+                    "Kconfiglib/tests/Kpreprocess:119",
+                    "Kconfiglib/tests/Kpreprocess:119",
+                    False)
+
+    verify_variable("warning-res", "", "", False)
+    verify_variable("error-n-res", "", "", False)
+
+    try:
+        c.variables["error-y-res"].expanded_value
+    except KconfigError:
+        pass
+    else:
+        fail("expanding error-y-res didn't raise an exception")
+
+    # Check that the expected warnings were generated
+    verify_equal(c.warnings, [
+        "Kconfiglib/tests/Kpreprocess:116: warning: 'echo message on stderr >&2' wrote to stderr: message on stderr",
+        "Kconfiglib/tests/Kpreprocess:124: warning: a warning"
+    ])
+
 
 
     print("\nAll selftests passed\n" if all_passed else

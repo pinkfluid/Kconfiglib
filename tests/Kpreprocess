@@ -100,9 +100,31 @@ foo-$(dummy-arg-fn, ignored argument )$($(lhs-indir-1)) = $(rhs)
 # Expands to empty string, accepted
   $(undefined)  
 
-
 # Variable with a space in its name
 empty =
 space = $(empty) $(empty)
 foo$(space)bar = value
 space-var-res = $(foo bar)
+
+
+# Built-in functions
+
+# Expands to "baz qaz"
+shell-res = $(shell,false && echo foo bar || echo baz qaz)
+
+# Warns about output on stderr, expands to nothing
+shell-stderr-res := $(shell,echo message on stderr >&2)
+
+# Expands to the current location
+location-res := $(filename):$(lineno)
+
+# Adds one warning, expands to nothing
+$(warning-if,,no warning)
+$(warning-if,n,no warning)
+warning-res := $(warning-if,y,a warning)
+
+# Does not cause an error, expands to nothing
+error-n-res := $(error-if,n,oops)
+
+# Causes an error when expanded
+error-y-res = $(error-if,y,oops)

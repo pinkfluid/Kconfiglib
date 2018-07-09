@@ -672,14 +672,14 @@ class Kconfig(object):
         # Maps preprocessor variables names to Variable instances
         self.variables = {}
 
-        # Predefined preprocessor functions
+        # Predefined preprocessor functions, with min/max number of arguments
         self._functions = {
-            "error-if":   _error_if_fn,
-            "filename":   _filename_fn,
-            "filename":   _filename_fn,
-            "lineno":     _lineno_fn,
-            "shell":      _shell_fn,
-            "warning-if": _warning_if_fn,
+            "info":       (_info_fn,       1, 1),
+            "error-if":   (_error_if_fn,   2, 2),
+            "filename":   (_filename_fn,   0, 0),
+            "lineno":     (_lineno_fn,     0, 0),
+            "shell":      (_shell_fn,      1, 1),
+            "warning-if": (_warning_if_fn, 2, 2),
         }
 
 
@@ -1981,7 +1981,20 @@ class Kconfig(object):
             return res
 
         if fn in self._functions:
-            return self._functions[fn](self, args)
+            py_fn, min_arg, max_arg = self._functions[fn]
+
+            if not min_arg <= len(args) - 1 <= max_arg:
+                if min_arg == max_arg:
+                    expected_args = min_arg
+                else:
+                    expected_args = "{}-{}".format(min_arg, max_arg)
+
+                raise KconfigError("{}:{}: bad number of arguments in call "
+                                   "to {}, expected {}, got {}"
+                                   .format(self._filename, self._linenr, fn,
+                                           expected_args, len(args) - 1))
+
+            return py_fn(self, args)
 
         if fn in os.environ:
             return os.environ[fn]
@@ -5350,51 +5363,43 @@ def _warn_choice_select_imply(sym, expr, expr_type):
 # TODO: check if variable with spaces is referenced
 
 def _filename_fn(kconf, args):
-    if len(args) > 1:
-        todo
-
     return kconf._filename
 
 def _lineno_fn(kconf, args):
-    if len(args) > 1:
-        todo
-
     return str(kconf._linenr)
 
 def _info_fn(kconf, args):
-    if len(args) != 2:
-        vhfdiv
+    print("{}:{}: {}".format(kconf._filename, kconf._linenr, args[1]))
 
-    return args[1]
+    return ""
 
 def _warning_if_fn(kconf, args):
-    if len(args) != 3:
-        todo
-
     if args[1] == "y":
-        kconf._warn("warning: " + args[2])
+        kconf._warn(args[2], kconf._filename, kconf._linenr)
 
     return ""
 
 def _error_if_fn(kconf, args):
-    if len(args) != 3:
-        todo
-
     if args[1] == "y":
-        kconf._parse_error("error: " + args[2])
+        raise KconfigError("{}:{}: {}".format(
+            kconf._filename, kconf._linenr, args[2]))
 
     return ""
 
 def _shell_fn(kconf, args):
-    if len(args) != 2:
-        todo
-
-    stdout = subprocess.Popen(args[1], shell=True, stdout=subprocess.PIPE) \
-             .communicate()[0]
+    stdout, stderr = subprocess.Popen(
+        args[1], shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    ).communicate()
 
     if not _IS_PY2:
         # TODO: decoding errors
         stdout = stdout.decode(kconf._encoding)
+        stderr = stderr.decode(kconf._encoding)
+
+    if stderr:
+        kconf._warn(
+            "'{}' wrote to stderr: {}".format(args[1], stderr.rstrip("\n")),
+            kconf._filename, kconf._linenr)
 
     return stdout.rstrip("\n").replace("\n", " ")
 
