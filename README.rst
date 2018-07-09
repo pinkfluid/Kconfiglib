@@ -23,7 +23,7 @@ Kconfiglib implements the recently added `Kconfig preprocessor
 For backwards compatibility, environment variables can be referenced both as
 ``$(FOO)`` (the new syntax) and as ``$FOO`` (the old syntax). Support for the
 old syntax might be removed in the future (the major version would be increased
-as the same time). Using the old syntax with an undefined environment variable
+at the same time). Using the old syntax with an undefined environment variable
 keeps the string as is.
 
 Installation
