@@ -480,6 +480,10 @@ class Kconfig(object):
       C tools). Can be changed with the 'mainmenu' statement (see
       kconfig-language.txt).
 
+    variables:
+      A dictionary with all preprocessor variables, indexed by name. See the
+      Variable class.
+
     warnings:
       A list of strings containing all warnings that have been generated. This
       allows flexibility in how warnings are printed and processed.
@@ -1841,6 +1845,11 @@ class Kconfig(object):
             self._tokens_i += 1
             return True
         return False
+
+
+    #
+    # Preprocessor logic
+    #
 
     def _parse_assignment(self, s):
         # Parses a preprocessor variable assignment, registering the variable
