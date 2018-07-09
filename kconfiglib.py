@@ -1594,7 +1594,9 @@ class Kconfig(object):
         # Initial token on the line
         match = _command_match(s)
         if not match:
-            return (None,)
+            if s.isspace() or s.lstrip().startswith("#"):
+                return (None,)
+            self._parse_error("unknown token at start of line")
 
         # Tricky implementation detail: While parsing a token, 'token' refers
         # to the previous token. See _STRING_LEX for why this is needed.
@@ -1858,7 +1860,7 @@ class Kconfig(object):
         name = s[:i]
 
 
-        # Extract assignment operator (=, :=, +=) and value
+        # Extract assignment operator (=, :=, or +=) and value
         rhs_match = _assignment_rhs_match(s, i)
         if not rhs_match:
             self._parse_error("syntax error")
@@ -1867,8 +1869,10 @@ class Kconfig(object):
 
 
         if name in self.variables:
+            # Already seen variable
             var = self.variables[name]
         else:
+            # New variable
             var = Variable()
             var.kconfig = self
             var.name = name
@@ -1881,15 +1885,15 @@ class Kconfig(object):
                 op = "="
 
         if op == "=":
-            var.is_recursive = True
+            var._is_recursive = True
             var.value = val
         elif op == ":=":
-            var.is_recursive = False
+            var._is_recursive = False
             var.value = self._expand_whole(val, ())
         else:  # op == "+="
             # += does immediate expansion if the variable was last set
             # with :=
-            var.value += " " + (val if var.is_recursive else \
+            var.value += " " + (val if var._is_recursive else \
                                 self._expand_whole(val, ()))
 
     def _expand_whole(self, s, args):
@@ -4582,8 +4586,8 @@ class MenuNode(object):
 class Variable(object):
     # !!!
     __slots__ = (
+        "_is_recursive",
         "_n_expansions",
-        "is_recursive",
         "kconfig",
         "name",
         "value",
