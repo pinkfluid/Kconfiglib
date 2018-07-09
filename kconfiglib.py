@@ -1715,6 +1715,11 @@ class Kconfig(object):
                 elif c == "$":
                     s, end_i = self._expand_macro(s, i, ())
                     val = s[i:end_i]
+                    # isspace() is False for empty strings
+                    if not val.strip():
+                        # Avoid creating a Kconfig symbol with an empty name.
+                        # It's almost guaranteed to be an error.
+                        self._parse_error("macro expanded to blank string")
                     i = end_i
 
                     # Compatibility with what the C implementation does. Might
