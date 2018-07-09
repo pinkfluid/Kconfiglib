@@ -1873,13 +1873,12 @@ class Kconfig(object):
             var.kconfig = self
             var.name = name
             var._n_expansions = 0
+            self.variables[name] = var
 
             # += acts like = on undefined variables (defines a recursive
             # variable)
             if op == "+=":
                 op = "="
-
-            self.variables[name] = var
 
         if op == "=":
             var.is_recursive = True
