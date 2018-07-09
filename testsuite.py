@@ -2011,9 +2011,9 @@ g
                "expected variable '{}' to have the expanded value '{}', had "
                "the value '{}'".format(name, exp_value, var.expanded_value))
 
-        verify(var._is_recursive == recursive,
+        verify(var.is_recursive == recursive,
                "{} was {}, shouldn't be"
-               .format(name, "recursive" if var._is_recursive else "simple"))
+               .format(name, "recursive" if var.is_recursive else "simple"))
 
     verify_variable("simple-recursive", "foo", "foo", True)
     verify_variable("simple-immediate", "bar", "bar", False)

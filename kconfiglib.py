@@ -1661,7 +1661,7 @@ class Kconfig(object):
                 c = s[i]
 
                 if c in "\"'":
-                    s, end_i = self._expand_quoted_str(s, i, c)
+                    s, end_i = self._expand_str(s, i, c)
 
                     # os.path.expandvars() and the $UNAME_RELEASE replace() is
                     # a backwards compatibility hack, which should be
@@ -1844,9 +1844,11 @@ class Kconfig(object):
 
     def _parse_assignment(self, s):
         # Parses a preprocessor variable assignment, registering the variable
-        # if it doesn't already exist
+        # if it doesn't already exist. Also takes care of bare macros on lines
+        # (which are allowed, and can be useful for their side effects).
 
-        # Expand any macros in the left-hand side of the assignment
+        # Expand any macros in the left-hand side of the assignment (the
+        # variable name)
         s = s.lstrip()
         i = 0
         while 1:
@@ -1890,18 +1892,24 @@ class Kconfig(object):
                 op = "="
 
         if op == "=":
-            var._is_recursive = True
+            var.is_recursive = True
             var.value = val
         elif op == ":=":
-            var._is_recursive = False
+            var.is_recursive = False
             var.value = self._expand_whole(val, ())
         else:  # op == "+="
             # += does immediate expansion if the variable was last set
             # with :=
-            var.value += " " + (val if var._is_recursive else \
+            var.value += " " + (val if var.is_recursive else \
                                 self._expand_whole(val, ()))
 
     def _expand_whole(self, s, args):
+        # Expands preprocessor macros in all of 's'. Used whenever we don't
+        # have to worry about delimiters. See _expand_macro() re. the 'args'
+        # parameter.
+        #
+        # Returns the expanded string.
+
         i = 0
         while 1:
             i = s.find("$(", i)
@@ -1910,7 +1918,13 @@ class Kconfig(object):
             s, i = self._expand_macro(s, i, args)
         return s
 
-    def _expand_quoted_str(self, s, i, quote):
+    def _expand_str(self, s, i, quote):
+        # Expands a quoted string starting at index 'i' in 's'. Handles both
+        # backslash escapes and macro expansion.
+        #
+        # Returns the expanded 's' (including the part before the string) and
+        # the index of the first character after the expanded string in 's'.
+
         i += 1  # Skip over initial "/'
         while 1:
             match = _string_special_search(s, i)
@@ -1919,13 +1933,17 @@ class Kconfig(object):
 
 
             if match.group() == quote:
+                # Found the end of the string
                 return (s, match.end())
 
             elif match.group() == "\\":
+                # Replace '\x' with 'x'. 'i' ends up pointing to the character
+                # after 'x', which allows macros to be canceled with '\$(foo)'.
                 i = match.end()
                 s = s[:match.start()] + s[i:]
 
             elif match.group() == "$(":
+                # A macro call within the string
                 s, i = self._expand_macro(s, match.start(), ())
 
             else:
@@ -1933,10 +1951,20 @@ class Kconfig(object):
                 i += 1
 
     def _expand_macro(self, s, i, args):
+        # Expands a macro starting at index 'i' in 's'. If this macro resulted
+        # from the expansion of another macro, 'args' holds the arguments
+        # passed to that macro.
+        #
+        # Returns the expanded 's' (including the part before the macro) and
+        # the index of the first character after the expanded macro in 's'.
+
         start = i
         i += 2  # Skip over "$("
+
+        # Start of current macro argument
         arg_start = i
 
+        # Arguments of this macro call
         new_args = []
 
         while 1:
@@ -1946,36 +1974,54 @@ class Kconfig(object):
 
 
             if match.group() == ")":
+                # Found the end of the macro
+
                 new_args.append(s[arg_start:match.start()])
 
                 prefix = s[:start]
 
+                # $(1) is replaced by the first argument to the function, etc.,
+                # provided at least that many arguments were passed
+
                 try:
+                    # Does the macro look like an integer, with a corresponding
+                    # argument? If so, expand it to the value of the argument.
                     prefix += args[int(new_args[0])]
                 except (ValueError, IndexError):
+                    # Regular variables are just functions without arguments,
+                    # and also go through the function value path
                     prefix += self._fn_val(new_args)
 
                 return (prefix + s[match.end():],
                         len(prefix))
 
             elif match.group() == ",":
+                # Found the end of a macro argument
                 new_args.append(s[arg_start:match.start()])
                 arg_start = i = match.end()
 
             else:  # match.group() == "$("
+                # A nested macro call within the macro
                 s, i = self._expand_macro(s, match.start(), args)
 
     def _fn_val(self, args):
+        # Returns the result of calling the function args[0] with the arguments
+        # args[1..len(args)-1]. Plain variables are treated as functions
+        # without arguments.
+
         fn = args[0]
 
         if fn in self.variables:
             var = self.variables[fn]
 
             if len(args) == 1:
+                # Plain variable
                 if var._n_expansions:
                     self._parse_error("Preprocessor variable {} recursively "
                                       "references itself".format(var.name))
             elif var._n_expansions > 100:
+                # Allow functions to call themselves, but guess that functions
+                # that are overly recursive are stuck
                 self._parse_error("Preprocessor function {} seems stuck "
                                   "in infinite recursion".format(var.name))
 
@@ -1985,6 +2031,8 @@ class Kconfig(object):
             return res
 
         if fn in self._functions:
+            # Built-in function
+
             py_fn, min_arg, max_arg = self._functions[fn]
 
             if not min_arg <= len(args) - 1 <= max_arg:
@@ -2000,6 +2048,7 @@ class Kconfig(object):
 
             return py_fn(self, args)
 
+        # Environment variables are tried last
         if fn in os.environ:
             return os.environ[fn]
 
@@ -4589,10 +4638,27 @@ class MenuNode(object):
         return "\n".join(lines) + "\n"
 
 class Variable(object):
-    # !!!
+    """
+    Represents a preprocessor variable/function.
+
+    The following attributes are available:
+
+    name:
+      The name of the variable.
+
+    value:
+      The unexpanded value of the variable.
+
+    expanded_value:
+      The expanded value of the variable. For simple variables (those defined
+      with :=), this will equal 'value'.
+
+    is_recursive:
+      True if the variable is recursive (defined with =).
+    """
     __slots__ = (
-        "_is_recursive",
         "_n_expansions",
+        "is_recursive",
         "kconfig",
         "name",
         "value",
@@ -4601,7 +4667,7 @@ class Variable(object):
     @property
     def expanded_value(self):
         """
-        !!!
+        See the class documentation.
         """
         return self.kconfig._expand_whole(self.value, ())
 
