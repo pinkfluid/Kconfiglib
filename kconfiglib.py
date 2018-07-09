@@ -1839,7 +1839,7 @@ class Kconfig(object):
         # Parses a preprocessor variable assignment, registering the variable
         # if it doesn't already exist
 
-        # Expand any macros in the left-hand-side of the assignment
+        # Expand any macros in the left-hand side of the assignment
         s = s.lstrip()
         i = 0
         while 1:
