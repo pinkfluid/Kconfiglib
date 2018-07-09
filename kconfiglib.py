@@ -516,8 +516,8 @@ class Kconfig(object):
     __slots__ = (
         "_encoding",
         "_functions",
-        "_set_re_match",
-        "_unset_re_match",
+        "_set_match",
+        "_unset_match",
         "_warn_for_no_prompt",
         "_warn_for_redun_assign",
         "_warn_for_undef_assign",
@@ -619,13 +619,9 @@ class Kconfig(object):
         # method assigned directly as a small optimization (microscopic in this
         # case, but it's consistent with the other regexes)
 
-        self._set_re_match = \
-            re.compile(r"{}([^=]+)=(.*)".format(self.config_prefix),
-                       _RE_ASCII).match
-
-        self._unset_re_match = \
-            re.compile(r"# {}([^ ]+) is not set".format(self.config_prefix),
-                       _RE_ASCII).match
+        self._set_match = _re_match(self.config_prefix + r"([^=]+)=(.*)")
+        self._unset_match = \
+            _re_match(r"# {}([^ ]+) is not set".format(self.config_prefix))
 
 
         self.warnings = []
@@ -827,17 +823,17 @@ class Kconfig(object):
                     choice._was_set = False
 
             # Small optimizations
-            set_re_match = self._set_re_match
-            unset_re_match = self._unset_re_match
+            set_match = self._set_match
+            unset_match = self._unset_match
             syms = self.syms
 
             for linenr, line in enumerate(f, 1):
                 # The C tools ignore trailing whitespace
                 line = line.rstrip()
 
-                set_match = set_re_match(line)
-                if set_match:
-                    name, val = set_match.groups()
+                match = set_match(line)
+                if match:
+                    name, val = match.groups()
                     if name not in syms:
                         self._warn_undef_assign_load(name, val, filename,
                                                      linenr)
@@ -882,22 +878,22 @@ class Kconfig(object):
                             sym.choice.set_value(val)
 
                     elif sym.orig_type == STRING:
-                        string_match = _conf_string_re_match(val)
-                        if not string_match:
+                        match = _conf_string_match(val)
+                        if not match:
                             self._warn("malformed string literal in "
                                        "assignment to {}. Assignment ignored."
                                        .format(_name_and_loc(sym)),
                                        filename, linenr)
                             continue
 
-                        val = unescape(string_match.group(1))
+                        val = unescape(match.group(1))
 
                 else:
-                    unset_match = unset_re_match(line)
-                    if not unset_match:
+                    match = unset_match(line)
+                    if not match:
                         # Print a warning for lines that match neither
-                        # set_re_match() nor unset_re_match() and that are not
-                        # blank lines or comments. 'line' has already been
+                        # set_match() nor unset_match() and that are not blank
+                        # lines or comments. 'line' has already been
                         # rstrip()'d, so blank lines show up as "" here.
                         if line and not line.lstrip().startswith("#"):
                             self._warn("ignoring malformed line '{}'"
@@ -906,7 +902,7 @@ class Kconfig(object):
 
                         continue
 
-                    name = unset_match.group(1)
+                    name = match.group(1)
                     if name not in syms:
                         self._warn_undef_assign_load(name, "n", filename,
                                                      linenr)
@@ -1289,21 +1285,21 @@ class Kconfig(object):
 
         with self._open_enc("auto.conf", _UNIVERSAL_NEWLINES_MODE) as f:
             for line in f:
-                set_match = self._set_re_match(line)
-                if not set_match:
+                match = self._set_match(line)
+                if not match:
                     # We only expect CONFIG_FOO=... (and possibly a header
                     # comment) in auto.conf
                     continue
 
-                name, val = set_match.groups()
+                name, val = match.groups()
                 if name in self.syms:
                     sym = self.syms[name]
 
                     if sym.orig_type == STRING:
-                        string_match = _conf_string_re_match(val)
-                        if not string_match:
+                        match = _conf_string_match(val)
+                        if not match:
                             continue
-                        val = unescape(string_match.group(1))
+                        val = unescape(match.group(1))
 
                     self.syms[name]._old_val = val
 
@@ -1596,13 +1592,13 @@ class Kconfig(object):
         # hotspot during parsing.
 
         # Initial token on the line
-        command_match = _command_re_match(s)
-        if not command_match:
+        match = _command_match(s)
+        if not match:
             return (None,)
 
         # Tricky implementation detail: While parsing a token, 'token' refers
         # to the previous token. See _STRING_LEX for why this is needed.
-        token = _get_keyword(command_match.group(1))
+        token = _get_keyword(match.group(1))
         if not token:
             # If the first token is not a keyword, we have a preprocessor
             # variable assignment
@@ -1611,24 +1607,24 @@ class Kconfig(object):
 
         tokens = [token]
         # The current index in the string being tokenized
-        i = command_match.end()
+        i = match.end()
 
         # Main tokenization loop (for tokens past the first one)
         while i < len(s):
             # Test for an identifier/keyword first. This is the most common
             # case.
-            id_keyword_match = _id_keyword_re_match(s, i)
-            if id_keyword_match:
+            match = _id_keyword_match(s, i)
+            if match:
                 # We have an identifier or keyword
 
                 # Jump past it
-                i = id_keyword_match.end()
+                i = match.end()
 
                 # Check what it is. lookup_sym() will take care of allocating
                 # new symbols for us the first time we see them. Note that
                 # 'token' still refers to the previous token.
 
-                name = id_keyword_match.group(1)
+                name = match.group(1)
                 keyword = _get_keyword(name)
                 if keyword:
                     # It's a keyword
@@ -1909,7 +1905,7 @@ class Kconfig(object):
     def _expand_quoted_str(self, s, i, quote):
         i += 1  # Skip over initial "/'
         while 1:
-            match = _string_special_re_search(s, i)
+            match = _string_special_search(s, i)
             if not match:
                 self._parse_error("unterminated string")
 
@@ -1936,7 +1932,7 @@ class Kconfig(object):
         new_args = []
 
         while 1:
-            match = _macro_special_re_search(s, i)
+            match = _macro_special_search(s, i)
             if not match:
                 self._parse_error("missing end parenthesis in macro expansion")
 
@@ -4793,14 +4789,14 @@ def escape(s):
     return s.replace("\\", r"\\").replace('"', r'\"')
 
 # unescape() helper
-_unescape_re_sub = re.compile(r"\\(.)").sub
+_unescape_sub = re.compile(r"\\(.)").sub
 
 def unescape(s):
     r"""
     Unescapes the string 's'. \ followed by any character is replaced with just
     that character. Used internally when reading .config files.
     """
-    return _unescape_re_sub(r"\1", s)
+    return _unescape_sub(r"\1", s)
 
 def standard_kconfig():
     """
@@ -5596,35 +5592,53 @@ _TYPE_TOKENS = frozenset((
     _T_STRING,
 ))
 
+
+# Helper functions for getting compiled regular expressions, with the needed
+# matching function returned directly as a small optimization.
+#
 # Use ASCII regex matching on Python 3. It's already the default on Python 2.
-_RE_ASCII = 0 if _IS_PY2 else re.ASCII
+
+def _re_match(regex):
+    return re.compile(regex, 0 if _IS_PY2 else re.ASCII).match
+
+def _re_search(regex):
+    return re.compile(regex, 0 if _IS_PY2 else re.ASCII).search
+
+
+# Various regular expressions used during parsing
 
 # The initial token on a line. Also eats leading and trailing whitespace, so
 # that we can jump straight to the next token (or to the end of the line if
 # there is only one token).
 #
 # This regex will also fail to match for empty lines and comment lines.
-# !!! $
-_command_re_match = re.compile(r"\s*([$A-Za-z0-9_-]+)\s*", _RE_ASCII).match
+#
+# '$' is included to detect a variable assignment left-hand side with a $ in it
+# (which might be from a macro expansion).
+_command_match = _re_match(r"\s*([$A-Za-z0-9_-]+)\s*")
 
-# Matches an identifier/keyword, also eating trailing whitespace
-_id_keyword_re_match = re.compile(r"([A-Za-z0-9_/.-]+)\s*", _RE_ASCII).match
+# An identifier/keyword after the first token. Also eats trailing whitespace.
+_id_keyword_match = _re_match(r"([A-Za-z0-9_/.-]+)\s*")
 
-# !!!
-_assignment_lhs_fragment_match = re.compile("[A-Za-z0-9_-]*", _RE_ASCII).match
+# A fragment in the left-hand side of a preprocessor variable assignment. These
+# are the portions between macro expansions ($(foo)). Macros are supported in
+# the LHS (variable name).
+_assignment_lhs_fragment_match = _re_match("[A-Za-z0-9_-]*")
 
-# !!!
-_assignment_rhs_match = re.compile(r"\s*(=|:=|\+=)\s*(.*)", _RE_ASCII).match
+# The assignment operator and value (right-hand side) in a preprocessor
+# variable assignment
+_assignment_rhs_match = _re_match(r"\s*(=|:=|\+=)\s*(.*)")
 
-# Special characters/strings while expanding a macro
-_macro_special_re_search = re.compile(r"\)|,|\$\(", _RE_ASCII).search
+# Special characters/strings while expanding a macro (')', ',', and '$(')
+_macro_special_search = _re_search(r"\)|,|\$\(")
 
-# Special characters/strings while expanding a string
-_string_special_re_search = re.compile(r'"|\'|\\|\$\(', _RE_ASCII).search
+# Special characters/strings while expanding a string (quotes, '\', and '$(')
+_string_special_search = _re_search(r'"|\'|\\|\$\(')
 
-# Matches a valid right-hand side for an assignment to a string symbol in a
-# .config file, including escaped characters. Extracts the contents.
-_conf_string_re_match = re.compile(r'"((?:[^\\"]|\\.)*)"', _RE_ASCII).match
+# A valid right-hand side for an assignment to a string symbol in a .config
+# file, including escaped characters. Extracts the contents.
+_conf_string_match = _re_match(r'"((?:[^\\"]|\\.)*)"')
+
 
 # Token to type mapping
 _TOKEN_TO_TYPE = {
