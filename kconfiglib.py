@@ -1874,8 +1874,8 @@ class Kconfig(object):
             var.name = name
             var._n_expansions = 0
 
-            # += acts like = (defines a recursive variable) on undefined
-            # variables
+            # += acts like = on undefined variables (defines a recursive
+            # variable)
             if op == "+=":
                 op = "="
 
@@ -1996,6 +1996,7 @@ class Kconfig(object):
             return os.environ[fn]
 
         return ""
+
 
     #
     # Parsing
