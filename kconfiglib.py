@@ -79,14 +79,16 @@ Using Kconfiglib without the Makefile targets
 =============================================
 
 The make targets are only needed for a trivial reason: The Kbuild makefiles
-export environment variables which are referenced inside the Kconfig files
-(via e.g. 'source "arch/$SRCARCH/Kconfig").
+export environment variables which are referenced inside the Kconfig files and
+in scripts run from the Kconfig files (via e.g. 'source
+"arch/$(SRCARCH)/Kconfig" and '$(shell,...)').
 
-In practice, the only variables referenced (as of writing, and for many years)
-are ARCH, SRCARCH, and KERNELVERSION. To run Kconfiglib without the Makefile
-patch, do this:
+The environment variables referenced as of writing (Linux 4.2.18-rc4) are
+srctree, ARCH, SRCARCH, CC, and KERNELVERSION.
 
-  $ ARCH=x86 SRCARCH=x86 KERNELVERSION=`make kernelversion` python
+To run Kconfiglib without the Makefile patch, you can do this:
+
+  $ srctree=. ARCH=x86 SRCARCH=x86 CC=gcc KERNELVERSION=`make kernelversion` python(3)
   >>> import kconfiglib
   >>> kconf = kconfiglib.Kconfig()  # filename defaults to "Kconfig"
 
@@ -4997,9 +4999,18 @@ def _internal_error(msg):
         "email service to tell me about this. Include the message above and "
         "the stack trace and describe what you were doing.")
 
-def _decoding_error(e, filename):
+def _decoding_error(e, filename, macro_linenr=None):
     # Gives the filename and context for UnicodeDecodeError's, which are a pain
     # to debug otherwise. 'e' is the UnicodeDecodeError object.
+    #
+    # If the decoding error is for the output of a $(shell,...) command,
+    # macro_linenr holds the line number where it was run (the exact line
+    # number isn't available for decoding errors in files).
+
+    if macro_linenr is None:
+        loc = filename
+    else:
+        loc = "output from macro at {}:{}".format(filename, macro_linenr)
 
     raise KconfigError(
         "\n"
@@ -5007,7 +5018,7 @@ def _decoding_error(e, filename):
         "Context: {}\n"
         "Problematic data: {}\n"
         "Reason: {}".format(
-            e.encoding, filename,
+            e.encoding, loc,
             e.object[max(e.start - 40, 0):e.end + 40],
             e.object[e.start:e.end],
             e.reason))
@@ -5437,10 +5448,7 @@ def _warn_choice_select_imply(sym, expr, expr_type):
 
     sym.kconfig._warn(msg)
 
-# Preprocessor functions
-
-# TODO: default $(FOO)  should check if $(FOO) expands to an empty string
-# TODO: check if variable with spaces is referenced
+# Predefined preprocessor functions
 
 def _filename_fn(kconf, args):
     return kconf._filename
@@ -5472,9 +5480,11 @@ def _shell_fn(kconf, args):
     ).communicate()
 
     if not _IS_PY2:
-        # TODO: decoding errors
-        stdout = stdout.decode(kconf._encoding)
-        stderr = stderr.decode(kconf._encoding)
+        try:
+            stdout = stdout.decode(kconf._encoding)
+            stderr = stderr.decode(kconf._encoding)
+        except UnicodeDecodeError as e:
+            _decoding_error(e, kconf._filename, kconf._linenr)
 
     if stderr:
         kconf._warn(
