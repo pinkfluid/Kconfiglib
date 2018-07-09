@@ -1601,7 +1601,7 @@ class Kconfig(object):
         token = _get_keyword(match.group(1))
         if not token:
             # If the first token is not a keyword, we have a preprocessor
-            # variable assignment
+            # variable assignment (or a bare macro on a line)
             self._parse_assignment(s)
             return (None,)
 
