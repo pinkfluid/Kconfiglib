@@ -202,8 +202,8 @@ Intro to the menu tree
 The menu structure, as seen in e.g. menuconfig, is represented by a tree of
 MenuNode objects. The top node of the configuration corresponds to an implicit
 top-level menu, the title of which is shown at the top in the standard
-menuconfig interface. (The title with variables expanded is available in
-Kconfig.mainmenu_text in Kconfiglib.)
+menuconfig interface. (The title is also available in Kconfig.mainmenu_text in
+Kconfiglib.)
 
 The top node is found in Kconfig.top_node. From there, you can visit child menu
 nodes by following the 'list' pointer, and any following menu nodes by
@@ -460,9 +460,6 @@ class Kconfig(object):
       not found and $srctree was set when the Kconfig was created,
       $srctree/foo/defconfig is looked up as well.
 
-      References to Kconfig symbols ("$FOO") in the 'default' properties of the
-      defconfig_filename symbol are are expanded before the file is looked up.
-
       'defconfig_filename' is None if either no defconfig_list symbol exists,
       or if the defconfig_list symbol has no 'default' with a satisfied
       condition that specifies a file that exists.
@@ -477,10 +474,8 @@ class Kconfig(object):
       Acts as the root of the menu tree.
 
     mainmenu_text:
-      The prompt (title) of the top_node menu, with Kconfig variable references
-      ("$FOO") expanded. Defaults to "Linux Kernel Configuration" (like in the
-      C tools). Can be changed with the 'mainmenu' statement (see
-      kconfig-language.txt).
+      The prompt (title) of the top menu (top_node). Defaults to "Main menu".
+      Can be changed with the 'mainmenu' statement (see kconfig-language.txt).
 
     variables:
       A dictionary with all preprocessor variables, indexed by name. See the
@@ -698,7 +693,7 @@ class Kconfig(object):
         self.top_node.item = MENU
         self.top_node.is_menuconfig = True
         self.top_node.visibility = self.y
-        self.top_node.prompt = ("Linux Kernel Configuration", self.y)
+        self.top_node.prompt = ("Main menu", self.y)
         self.top_node.parent = None
         self.top_node.dep = self.y
         self.top_node.filename = filename
@@ -1498,14 +1493,11 @@ class Kconfig(object):
             # Extend the error message a bit in this case
             raise IOError(textwrap.fill(
                 "{}:{}: {} Also note that Kconfiglib expands references to "
-                "environment variables directly (via os.path.expandvars()), "
+                "environment variables directly, "
                 "meaning you do not need \"bounce\" symbols with "
                 "'option env=\"FOO\"'. For compatibility with the C tools, "
                 "name the bounce symbols the same as the environment variable "
-                "they reference (like the Linux kernel does). This change is "
-                "likely to soon appear in the C tools as well, and simplifies "
-                "the parsing implementation (symbols no longer need to be "
-                "evaluated during parsing)."
+                "they reference (like the Linux kernel does)."
                 .format(self._filename, self._linenr, e),
                 80))
 
@@ -1671,7 +1663,7 @@ class Kconfig(object):
 
                     # os.path.expandvars() and the $UNAME_RELEASE replace() is
                     # a backwards compatibility hack, which should be
-                    # reasonably safe as expandvars() leaves referenced to
+                    # reasonably safe as expandvars() leaves references to
                     # undefined env. vars. as is.
                     #
                     # The preprocessor functionality changed how environment
@@ -1723,7 +1715,7 @@ class Kconfig(object):
                     val = s[i:end_i]
                     # isspace() is False for empty strings
                     if not val.strip():
-                        # Avoid creating a Kconfig symbol with an empty name.
+                        # Avoid creating a Kconfig symbol with a blank name.
                         # It's almost guaranteed to be an error.
                         self._parse_error("macro expanded to blank string")
                     i = end_i
@@ -4662,7 +4654,8 @@ class Variable(object):
 
     expanded_value:
       The expanded value of the variable. For simple variables (those defined
-      with :=), this will equal 'value'.
+      with :=), this will equal 'value'. Accessing this property will raise a
+      KconfigError if any variable in the expansion expands to itself.
 
     is_recursive:
       True if the variable is recursive (defined with =).

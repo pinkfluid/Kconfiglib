@@ -807,7 +807,7 @@ comment "advanced comment"
     print("Testing Kconfig.__repr__()")
 
     verify_repr(c, """
-<configuration with 14 symbols, main menu prompt "Linux Kernel Configuration", srctree not set, config symbol prefix "CONFIG_", warnings disabled, printing of warnings to stderr enabled, undef. symbol assignment warnings disabled, redundant symbol assignment warnings enabled>
+<configuration with 14 symbols, main menu prompt "Main menu", srctree not set, config symbol prefix "CONFIG_", warnings disabled, printing of warnings to stderr enabled, undef. symbol assignment warnings disabled, redundant symbol assignment warnings enabled>
 """)
 
     os.environ["srctree"] = "srctree value"
@@ -820,7 +820,7 @@ comment "advanced comment"
     c.enable_undef_warnings()
 
     verify_repr(c, """
-<configuration with 14 symbols, main menu prompt "Linux Kernel Configuration", srctree "srctree value", config symbol prefix "CONFIG_ value", warnings enabled, printing of warnings to stderr disabled, undef. symbol assignment warnings enabled, redundant symbol assignment warnings disabled>
+<configuration with 14 symbols, main menu prompt "Main menu", srctree "srctree value", config symbol prefix "CONFIG_ value", warnings enabled, printing of warnings to stderr disabled, undef. symbol assignment warnings enabled, redundant symbol assignment warnings disabled>
 """)
 
     os.environ.pop("srctree", None)
@@ -1456,7 +1456,7 @@ g
     print("Testing mainmenu_text")
 
     c = Kconfig("Kconfiglib/tests/empty")
-    verify(c.mainmenu_text == "Linux Kernel Configuration",
+    verify(c.mainmenu_text == "Main menu",
            "An empty Kconfig should get a default main menu prompt")
 
     # Expanded in the mainmenu text
